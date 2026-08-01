@@ -16,6 +16,12 @@ strictly for local development. The default profile disables OTP delivery; a
 production SMS implementation of `OtpDeliveryPort` must be configured before
 deployment.
 
+The local profile also loads an idempotent sample catalogue from
+`db/local/sample_catalogue.sql`. It contains synthetic prices and availability
+states for UI/API testing and is never loaded by the default or production
+profiles. The sample includes available, unavailable, recalled, and unsupported
+exact packages across Arabic and English names.
+
 Production startup also requires strong, independently generated values for:
 
 ```text
@@ -45,7 +51,22 @@ POST   /api/v1/patient/profile/complete
 GET    /api/v1/patient/profile
 PATCH  /api/v1/patient/profile
 GET    /api/v1/patient/profile/consents
+
+GET    /api/v1/medicines/search?q=&page=&size=
+GET    /api/v1/medicines/{medicinePackageId}
+
+POST   /api/v1/admin/catalogue/packages
+PUT    /api/v1/admin/catalogue/packages/{medicinePackageId}
+DELETE /api/v1/admin/catalogue/packages/{medicinePackageId}
+POST   /api/v1/admin/catalogue/imports
 ```
+
+Catalogue mutation and import endpoints require the `CATALOGUE_MANAGER` role.
+Imports require an `Idempotency-Key` header; package creation accepts one for
+safe client retries. Search supports Arabic normalization, English/Arabic names,
+active ingredients, aliases, barcodes, dosage-form/manufacturer filters, and
+pagination. Responses always identify one exact medicine package and expose a
+`requestable` flag plus an `unavailableReason` when normal request flow is blocked.
 
 OpenAPI UI is available at `/swagger-ui.html` while the application is running.
 
@@ -75,4 +96,5 @@ include a stack trace at ERROR and return a safe `INTERNAL_SERVER_ERROR` respons
 The integration suite starts PostgreSQL 17 through Testcontainers and validates
 Flyway migrations, OTP expiry/replay/attempt limits, rate limiting, registration,
 policy consent, Arabic/English profile data, token rotation, device sessions,
-logout, and audit persistence.
+logout, exact-package catalogue search, catalogue permissions and idempotency,
+restriction gating, and audit persistence.

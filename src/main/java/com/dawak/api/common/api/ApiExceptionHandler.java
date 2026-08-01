@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.net.URI;
 import java.time.Instant;
@@ -42,6 +43,19 @@ public class ApiExceptionHandler {
         problem.setInstance(URI.create(request.getRequestURI()));
         problem.setProperty("code", "VALIDATION_ERROR");
         problem.setProperty("fieldErrors", fields);
+        problem.setProperty("timestamp", Instant.now());
+        return problem;
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    ProblemDetail handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+        log.warn("Access denied method={} path={}", request.getMethod(), request.getRequestURI());
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
+                "You do not have permission to perform this action.");
+        problem.setType(URI.create("https://api.dawak.example/problems/access-denied"));
+        problem.setTitle("Forbidden");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", "ACCESS_DENIED");
         problem.setProperty("timestamp", Instant.now());
         return problem;
     }
