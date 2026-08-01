@@ -3,6 +3,7 @@ package com.dawak.api;
 import com.dawak.api.prescription.application.PrescriptionFileInspector;
 import com.dawak.api.prescription.application.PrescriptionRetentionService;
 import com.dawak.api.prescription.application.PrescriptionService;
+import com.dawak.api.prescription.application.MalwareScanner;
 import com.dawak.api.common.web.RequestMetadata;
 import com.dawak.api.common.api.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -30,6 +32,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -46,9 +52,17 @@ class PrescriptionIntegrationTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired PrescriptionService prescriptions;
     @Autowired PrescriptionRetentionService retention;
+    @MockitoBean MalwareScanner malwareScanner;
 
     @BeforeEach
     void setUp() {
+        when(malwareScanner.scan(any())).thenAnswer(invocation -> {
+            byte[] content = invocation.getArgument(0);
+            String value = new String(content, StandardCharsets.ISO_8859_1);
+            return value.contains("EICAR-STANDARD-ANTIVIRUS-TEST-FILE")
+                    ? MalwareScanner.ScanResult.infectedResult("Eicar-Test-Signature")
+                    : MalwareScanner.ScanResult.cleanResult();
+        });
         jdbc.update("delete from prescription_access_log");
         jdbc.update("delete from prescription_access_grant");
         jdbc.update("delete from prescription");
@@ -185,6 +199,44 @@ class PrescriptionIntegrationTests {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void scannerOutageReturnsTraceableErrorPreservesQuarantineAndAllowsRetry() throws Exception {
+        byte[] pdf = "%PDF-1.7\nretry after scanner outage".getBytes(StandardCharsets.US_ASCII);
+        JsonNode intent = createIntent(pdf, "application/pdf", "rx.pdf");
+        String id = intent.get("prescriptionId").asString();
+        mvc.perform(put("/api/v1/prescriptions/{id}/content", id).with(patientJwt(PATIENT))
+                        .header("Upload-Token", intent.get("uploadToken").asString())
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM).content(pdf))
+                .andExpect(status().isNoContent());
+
+        doThrow(new ApiException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                "PRESCRIPTION_SCANNER_UNAVAILABLE", "ClamAV is unavailable", new java.net.ConnectException("refused")))
+                .when(malwareScanner).scan(any());
+        mvc.perform(post("/api/v1/prescriptions/{id}/finalize", id).with(patientJwt(PATIENT))
+                        .header("X-Request-ID", "scanner-outage-test"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PRESCRIPTION_SCANNER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.requestId").value("scanner-outage-test"));
+        assertThat(jdbc.queryForObject("select status from prescription where id=?", String.class, UUID.fromString(id)))
+                .isEqualTo("QUARANTINED");
+
+        doReturn(MalwareScanner.ScanResult.cleanResult()).when(malwareScanner).scan(any());
+        mvc.perform(post("/api/v1/prescriptions/{id}/finalize", id).with(patientJwt(PATIENT)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_REVIEW"));
+    }
+
+    @Test
+    void missingUploadHeaderReturnsSafeCodeAndRequestId() throws Exception {
+        byte[] pdf = "%PDF-1.7\nmissing header".getBytes(StandardCharsets.US_ASCII);
+        JsonNode intent = createIntent(pdf, "application/pdf", "rx.pdf");
+        mvc.perform(put("/api/v1/prescriptions/{id}/content", intent.get("prescriptionId").asString())
+                        .with(patientJwt(PATIENT)).header("X-Request-ID", "missing-header-test")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM).content(pdf))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_REQUIRED_HEADER"))
+                .andExpect(jsonPath("$.requestId").value("missing-header-test"));
     }
 
     private JsonNode createIntent(byte[] content, String type, String filename) throws Exception {

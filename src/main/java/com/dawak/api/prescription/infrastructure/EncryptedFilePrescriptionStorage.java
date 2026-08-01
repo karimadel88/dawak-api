@@ -62,6 +62,6 @@ public class EncryptedFilePrescriptionStorage implements PrescriptionStorage {
     }
 
     private ApiException storageFailure(String message, Exception cause) {
-        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PRESCRIPTION_STORAGE_UNAVAILABLE", message);
+        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PRESCRIPTION_STORAGE_UNAVAILABLE", message, cause);
     }
 }

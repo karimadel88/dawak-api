@@ -96,6 +96,31 @@ Set `DAWAK_HTTP_LOG_BODIES=false` when only HTTP metadata should be logged.
 Expected API and validation failures are logged at WARN; unexpected exceptions
 include a stack trace at ERROR and return a safe `INTERNAL_SERVER_ERROR` response.
 
+Prescription upload logs identify the phase (`STORAGE_WRITE`, scan/finalization),
+prescription ID, expected/received byte counts, state transition, and safe error
+code. They never log file contents, upload/access tokens, or decrypted data.
+Every error response includes a `requestId`; search for that value in the API
+terminal to find the corresponding request log and exception stack trace.
+
+Common prescription upload error codes:
+
+```text
+PRESCRIPTION_UPLOAD_TOKEN_INVALID    token expired, wrong, or already used
+PRESCRIPTION_FILE_SIZE_MISMATCH      uploaded bytes differ from the intent
+UNSUPPORTED_MEDIA_TYPE               PUT content was not application/octet-stream
+PRESCRIPTION_STORAGE_UNAVAILABLE     MinIO write/read/delete failed
+PRESCRIPTION_SCANNER_UNAVAILABLE     ClamAV is unreachable; finalization may be retried
+PRESCRIPTION_CHECKSUM_MISMATCH       uploaded bytes do not match SHA-256
+PRESCRIPTION_FILE_SIGNATURE_INVALID  MIME type does not match actual PDF/JPEG/PNG bytes
+PRESCRIPTION_MALWARE_DETECTED        ClamAV rejected the object
+```
+
+Infrastructure logs can be inspected with:
+
+```bash
+docker-compose -f compose.yaml logs --tail=100 minio clamav
+```
+
 ## DAW-5 prescription API
 
 ```text

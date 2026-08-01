@@ -13,6 +13,8 @@ import com.dawak.api.prescription.persistence.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -22,6 +24,7 @@ import java.util.UUID;
 
 @Service
 public class PrescriptionService {
+    private static final Logger log = LoggerFactory.getLogger(PrescriptionService.class);
     private final PrescriptionRepository prescriptions;
     private final PrescriptionAccessGrantRepository grants;
     private final PrescriptionAccessLogRepository accessLogs;
@@ -58,6 +61,8 @@ public class PrescriptionService {
                 now.plus(properties.uploadTtl()), now.plus(properties.retentionPeriod())));
         audit.record(patient.getUser(), "PRESCRIPTION_UPLOAD_INTENT_CREATED", "PRESCRIPTION", prescription.getId(),
                 "SUCCESS", metadata, "status=UPLOAD_PENDING");
+        log.info("Prescription upload intent created prescriptionId={} patientUserId={} contentType={} expectedBytes={} expiresAt={}",
+                prescription.getId(), userId, request.contentType(), request.fileSize(), prescription.getUploadExpiresAt());
         return new UploadIntentResponse(prescription.getId(),
                 "/api/v1/prescriptions/" + prescription.getId() + "/content", token, prescription.getUploadExpiresAt());
     }
@@ -65,38 +70,66 @@ public class PrescriptionService {
     @Transactional
     public void upload(UUID id, String uploadToken, byte[] content, UUID userId, RequestMetadata metadata) {
         Prescription value = own(id, userId);
+        log.info("Prescription content upload started prescriptionId={} patientUserId={} status={} expectedBytes={} receivedBytes={}",
+                id, userId, value.getStatus(), value.getFileSize(), content.length);
         if (value.getStatus() != PrescriptionStatus.UPLOAD_PENDING || value.getUploadExpiresAt() == null
                 || !value.getUploadExpiresAt().isAfter(Instant.now()) || uploadToken == null
                 || !PrescriptionFileInspector.sha256(uploadToken.getBytes()).equals(value.getUploadTokenHash())) {
+            log.warn("Prescription content upload rejected prescriptionId={} code=PRESCRIPTION_UPLOAD_TOKEN_INVALID status={} tokenPresent={} tokenExpired={}",
+                    id, value.getStatus(), uploadToken != null, value.getUploadExpiresAt() != null && !value.getUploadExpiresAt().isAfter(Instant.now()));
             throw new ApiException(HttpStatus.FORBIDDEN, "PRESCRIPTION_UPLOAD_TOKEN_INVALID", "Upload token is invalid or expired.");
         }
         if (content.length != value.getFileSize() || content.length > properties.maxFileSize()) {
+            log.warn("Prescription content upload rejected prescriptionId={} code=PRESCRIPTION_FILE_SIZE_MISMATCH expectedBytes={} receivedBytes={} maxBytes={}",
+                    id, value.getFileSize(), content.length, properties.maxFileSize());
             throw new ApiException(HttpStatus.BAD_REQUEST, "PRESCRIPTION_FILE_SIZE_MISMATCH", "Uploaded content size does not match the upload intent.");
         }
-        storage.write(value.getStorageKey(), content);
+        try {
+            storage.write(value.getStorageKey(), content);
+        } catch (ApiException exception) {
+            log.error("Prescription content upload dependency failure prescriptionId={} phase=STORAGE_WRITE code={}",
+                    id, exception.getCode(), exception);
+            throw exception;
+        }
         value.quarantine(Instant.now());
         audit.record(value.getPatientProfile().getUser(), "PRESCRIPTION_UPLOADED", "PRESCRIPTION", id,
                 "SUCCESS", metadata, "status=QUARANTINED");
+        log.info("Prescription content upload completed prescriptionId={} status=QUARANTINED receivedBytes={}", id, content.length);
     }
 
     @Transactional(noRollbackFor = ApiException.class)
     public PrescriptionResponse finalizeUpload(UUID id, UUID userId, RequestMetadata metadata) {
         Prescription value = own(id, userId);
         if (value.getStatus() != PrescriptionStatus.QUARANTINED) {
+            log.warn("Prescription finalization rejected prescriptionId={} code=PRESCRIPTION_NOT_QUARANTINED status={}",
+                    id, value.getStatus());
             throw new ApiException(HttpStatus.CONFLICT, "PRESCRIPTION_NOT_QUARANTINED", "Prescription is not awaiting validation.");
         }
+        log.info("Prescription finalization started prescriptionId={} contentType={} expectedBytes={}",
+                id, value.getDeclaredContentType(), value.getFileSize());
         try {
             byte[] content = storage.read(value.getStorageKey());
             String detected = inspector.inspect(content, value.getDeclaredContentType(), value.getChecksumSha256());
             value.scanPassed(detected);
             audit.record(value.getPatientProfile().getUser(), "PRESCRIPTION_SCAN_PASSED", "PRESCRIPTION", id,
                     "SUCCESS", metadata, "status=PENDING_REVIEW");
+            log.info("Prescription finalization completed prescriptionId={} status=PENDING_REVIEW detectedContentType={}",
+                    id, detected);
             return PrescriptionResponse.from(value);
         } catch (ApiException exception) {
+            if (exception.getStatus().is5xxServerError()) {
+                audit.record(value.getPatientProfile().getUser(), "PRESCRIPTION_SCAN_DEFERRED", "PRESCRIPTION", id,
+                        "ERROR", metadata, "code=" + exception.getCode());
+                log.error("Prescription finalization dependency failure prescriptionId={} phase=SCAN_OR_STORAGE code={} statusPreserved=QUARANTINED",
+                        id, exception.getCode(), exception);
+                throw exception;
+            }
             value.scanFailed();
             storage.delete(value.getStorageKey());
             audit.record(value.getPatientProfile().getUser(), "PRESCRIPTION_SCAN_FAILED", "PRESCRIPTION", id,
                     "DENIED", metadata, "code=" + exception.getCode());
+            log.warn("Prescription finalization rejected prescriptionId={} code={} status=SCAN_FAILED quarantinedObjectDeleted=true",
+                    id, exception.getCode());
             throw exception;
         }
     }
