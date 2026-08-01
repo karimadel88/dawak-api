@@ -63,6 +63,11 @@ class PrescriptionIntegrationTests {
                     ? MalwareScanner.ScanResult.infectedResult("Eicar-Test-Signature")
                     : MalwareScanner.ScanResult.cleanResult();
         });
+        jdbc.update("delete from request_pharmacy_match");
+        jdbc.update("delete from medicine_request_status_history");
+        jdbc.update("delete from medicine_request_idempotency_key");
+        jdbc.update("delete from medicine_request_item");
+        jdbc.update("delete from medicine_request");
         jdbc.update("delete from prescription_access_log");
         jdbc.update("delete from prescription_access_grant");
         jdbc.update("delete from prescription");

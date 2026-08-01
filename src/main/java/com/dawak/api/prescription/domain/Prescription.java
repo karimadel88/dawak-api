@@ -16,6 +16,8 @@ public class Prescription extends MutableEntity {
     private PatientProfile patientProfile;
     @Column(name = "storage_key", nullable = false, unique = true, length = 200)
     private String storageKey;
+    @Column(name = "medicine_package_id")
+    private UUID medicinePackageId;
     @Column(name = "original_filename", nullable = false, length = 255)
     private String originalFilename;
     @Column(name = "declared_content_type", nullable = false, length = 100)
@@ -53,11 +55,12 @@ public class Prescription extends MutableEntity {
 
     protected Prescription() {}
 
-    public Prescription(PatientProfile patientProfile, String storageKey, String originalFilename,
+    public Prescription(PatientProfile patientProfile, UUID medicinePackageId, String storageKey, String originalFilename,
                         String declaredContentType, long fileSize, String checksumSha256,
                         String uploadTokenHash, Instant uploadExpiresAt, Instant retentionUntil) {
         super(UUID.randomUUID());
         this.patientProfile = patientProfile;
+        this.medicinePackageId = medicinePackageId;
         this.storageKey = storageKey;
         this.originalFilename = originalFilename;
         this.declaredContentType = declaredContentType;
@@ -129,6 +132,7 @@ public class Prescription extends MutableEntity {
     }
 
     public PatientProfile getPatientProfile() { return patientProfile; }
+    public UUID getMedicinePackageId() { return medicinePackageId; }
     public String getStorageKey() { return storageKey; }
     public String getOriginalFilename() { return originalFilename; }
     public String getDeclaredContentType() { return declaredContentType; }

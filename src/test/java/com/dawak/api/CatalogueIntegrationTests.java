@@ -37,6 +37,17 @@ class CatalogueIntegrationTests {
 
     @BeforeEach
     void cleanCatalogue() {
+        jdbc.update("delete from request_pharmacy_match");
+        jdbc.update("delete from medicine_request_status_history");
+        jdbc.update("delete from medicine_request_idempotency_key");
+        jdbc.update("delete from medicine_request_item");
+        jdbc.update("delete from medicine_request");
+        jdbc.update("delete from pharmacy_branch_service_area");
+        jdbc.update("delete from pharmacy_branch");
+        jdbc.update("delete from pharmacy");
+        jdbc.update("delete from prescription_access_log");
+        jdbc.update("delete from prescription_access_grant");
+        jdbc.update("delete from prescription");
         jdbc.update("delete from catalogue_idempotency_key");
         jdbc.update("delete from catalogue_status_history");
         jdbc.update("delete from medicine_alias");

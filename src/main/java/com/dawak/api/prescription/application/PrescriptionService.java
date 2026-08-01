@@ -55,7 +55,7 @@ public class PrescriptionService {
                 new ApiException(HttpStatus.FORBIDDEN, "PATIENT_PROFILE_REQUIRED", "Complete the patient profile before uploading."));
         String token = token();
         Instant now = Instant.now();
-        var prescription = prescriptions.save(new Prescription(patient, UUID.randomUUID().toString(),
+        var prescription = prescriptions.save(new Prescription(patient, request.medicinePackageId(), UUID.randomUUID().toString(),
                 sanitizeFilename(request.originalFilename()), request.contentType(), request.fileSize(),
                 request.checksumSha256().toLowerCase(), PrescriptionFileInspector.sha256(token.getBytes()),
                 now.plus(properties.uploadTtl()), now.plus(properties.retentionPeriod())));

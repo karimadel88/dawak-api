@@ -141,6 +141,30 @@ from HTTP logs. Only the patient or designated pharmacist can request an access
 grant. Retention cleanup runs daily and removes expired encrypted objects and
 access grants while preserving an anonymized audit record.
 
+## DAW-6 medicine-request API
+
+```text
+POST /api/v1/medicine-requests
+GET  /api/v1/medicine-requests
+GET  /api/v1/medicine-requests/{id}
+POST /api/v1/medicine-requests/{id}/submit
+POST /api/v1/medicine-requests/{id}/qualify
+POST /api/v1/medicine-requests/{id}/expand-radius
+POST /api/v1/medicine-requests/{id}/cancel
+```
+
+Mutation endpoints require the `PATIENT` role and an `Idempotency-Key` header.
+Creation accepts one exact active medicine package, quantity, city/area,
+fulfillment preference, urgency, and an optional prescription. Submission checks
+package restrictions and prescription approval, then matches only approved,
+licensed pharmacies with active accepting branches in the requested service area.
+Requests with no eligible branches become `UNFULFILLED` and can be retried with a
+larger radius. Active requests expire automatically after the configured TTL.
+
+Useful local request settings are `DAWAK_REQUEST_INITIAL_RADIUS_KM`,
+`DAWAK_REQUEST_MAX_RADIUS_KM`, `DAWAK_REQUEST_MAX_QUANTITY`, and
+`DAWAK_REQUEST_TTL`.
+
 ## Verification
 
 ```bash
