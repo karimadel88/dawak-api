@@ -1,0 +1,10 @@
+package com.dawak.api.patient.domain;
+
+public enum ConsentTypeV1 {
+    TERMS_OF_SERVICE,
+    PRIVACY_POLICY,
+    PRESCRIPTION_PROCESSING,
+    NOTIFICATION_MARKETING,
+    DATA_SHARING_WITH_PHARMACY,
+    DELIVERY_DATA_SHARING
+}
