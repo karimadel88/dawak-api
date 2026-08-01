@@ -15,5 +15,37 @@ services:
     volumes:
       - dawak-postgres:/var/lib/postgresql/data
 
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: dawak_minio
+      MINIO_ROOT_PASSWORD: dawak_minio_change_me
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dawak-minio:/data
+
+  clamav:
+    image: clamav/clamav:1.4.3
+    ports:
+      - "3310:3310"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    volumes:
+      - dawak-clamav-signatures:/var/lib/clamav
+
 volumes:
   dawak-postgres:
+  dawak-minio:
+  dawak-clamav-signatures:

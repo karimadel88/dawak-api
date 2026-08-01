@@ -7,7 +7,7 @@ Spring Boot modular-monolith API for Dawak Release 1.
 Prerequisites: Java 21 and Docker.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres minio clamav
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
@@ -22,6 +22,12 @@ states for UI/API testing and is never loaded by the default or production
 profiles. The sample includes available, unavailable, recalled, and unsupported
 exact packages across Arabic and English names.
 
+Prescription binaries are placed in the private `dawak-prescriptions` MinIO
+bucket as AES-GCM encrypted objects. MinIO's API is available on port 9000 and
+its local console on <http://localhost:9001>. Quarantined uploads are scanned by
+ClamAV on port 3310 before entering pharmacist review. The API fails closed when
+storage or scanning is unavailable.
+
 Production startup also requires strong, independently generated values for:
 
 ```text
@@ -30,6 +36,9 @@ DAWAK_JWT_SECRET
 DAWAK_DATABASE_URL
 DAWAK_DATABASE_USERNAME
 DAWAK_DATABASE_PASSWORD
+DAWAK_PRESCRIPTION_ENCRYPTION_SECRET
+DAWAK_MINIO_ACCESS_KEY
+DAWAK_MINIO_SECRET_KEY
 ```
 
 `DAWAK_JWT_SECRET` must contain at least 32 bytes. Secrets must not be committed.
@@ -86,6 +95,26 @@ DAWAK_HTTP_LOG_MAX_PAYLOAD_LENGTH=8192
 Set `DAWAK_HTTP_LOG_BODIES=false` when only HTTP metadata should be logged.
 Expected API and validation failures are logged at WARN; unexpected exceptions
 include a stack trace at ERROR and return a safe `INTERNAL_SERVER_ERROR` response.
+
+## DAW-5 prescription API
+
+```text
+POST /api/v1/prescriptions/upload-intents
+PUT  /api/v1/prescriptions/{id}/content
+POST /api/v1/prescriptions/{id}/finalize
+GET  /api/v1/prescriptions/{id}
+POST /api/v1/prescriptions/{id}/access-url
+GET  /api/v1/prescriptions/{id}/content?accessToken=
+
+GET  /api/v1/pharmacist/prescriptions/queue
+POST /api/v1/pharmacist/prescriptions/{id}/claim
+POST /api/v1/pharmacist/prescriptions/{id}/review
+```
+
+Upload and access tokens expire, are stored only as hashes, and are redacted
+from HTTP logs. Only the patient or designated pharmacist can request an access
+grant. Retention cleanup runs daily and removes expired encrypted objects and
+access grants while preserving an anonymized audit record.
 
 ## Verification
 
