@@ -49,6 +49,23 @@ GET    /api/v1/patient/profile/consents
 
 OpenAPI UI is available at `/swagger-ui.html` while the application is running.
 
+## HTTP and exception logging
+
+Every HTTP exchange logs its request ID, method, path, response status, duration,
+and sanitized JSON request/response bodies. The API accepts a safe `X-Request-ID`
+header or generates one and returns it in the response. Credentials, OTP values,
+phone numbers, and patient PII are redacted. Non-JSON and oversized payloads are
+not written to logs.
+
+```text
+DAWAK_HTTP_LOG_BODIES=true
+DAWAK_HTTP_LOG_MAX_PAYLOAD_LENGTH=8192
+```
+
+Set `DAWAK_HTTP_LOG_BODIES=false` when only HTTP metadata should be logged.
+Expected API and validation failures are logged at WARN; unexpected exceptions
+include a stack trace at ERROR and return a safe `INTERNAL_SERVER_ERROR` response.
+
 ## Verification
 
 ```bash
